@@ -504,7 +504,7 @@ open class FormViewController: UIViewController, FormViewControllerProtocol, For
             }
         }
 
-        NotificationCenter.default.addObserver(self, selector: #selector(FormViewController.keyboardWillShow(_:)), name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(FormViewController.keyboardDidShow(_:)), name: UIResponder.keyboardDidShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(FormViewController.keyboardWillHide(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
 
         if form.containsMultivaluedSection && (isBeingPresented || isMovingToParent) {
@@ -514,7 +514,7 @@ open class FormViewController: UIViewController, FormViewControllerProtocol, For
 
     open override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardDidShowNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillHideNotification, object: nil)
     }
 
@@ -822,7 +822,7 @@ extension FormViewController : UITableViewDelegate {
         guard !row.isDisabled else { return false }
 		if row.trailingSwipe.actions.count > 0 { return true }
 		if #available(iOS 11,*), row.leadingSwipe.actions.count > 0 { return true }
-		guard let section = form[indexPath.section] as? BaseMultivaluedSection else { return false }
+		guard let section = form[indexPath.section] as? MultivaluedSection else { return false }
         guard !(indexPath.row == section.count - 1 && section.multivaluedOptions.contains(.Insert) && section.showInsertIconInAddButton) else {
             return true
         }
@@ -841,7 +841,7 @@ extension FormViewController : UITableViewDelegate {
             }
             section.remove(at: indexPath.row)
         } else if editingStyle == .insert {
-            guard var section = form[indexPath.section] as? BaseMultivaluedSection else { return }
+            guard var section = form[indexPath.section] as? MultivaluedSection else { return }
             guard let multivaluedRowToInsertAt = section.multivaluedRowToInsertAt else {
                 fatalError("Multivalued section multivaluedRowToInsertAt property must be set up")
             }
@@ -861,7 +861,7 @@ extension FormViewController : UITableViewDelegate {
     }
 
     open func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
-        guard let section = form[indexPath.section] as? BaseMultivaluedSection, section.multivaluedOptions.contains(.Reorder) && section.count > 1 else {
+        guard let section = form[indexPath.section] as? MultivaluedSection, section.multivaluedOptions.contains(.Reorder) && section.count > 1 else {
             return false
         }
         if section.multivaluedOptions.contains(.Insert) && (section.count <= 2 || indexPath.row == (section.count - 1)) {
@@ -874,7 +874,7 @@ extension FormViewController : UITableViewDelegate {
     }
 
     open func tableView(_ tableView: UITableView, targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath, toProposedIndexPath proposedDestinationIndexPath: IndexPath) -> IndexPath {
-        guard let section = form[sourceIndexPath.section] as? BaseMultivaluedSection else { return sourceIndexPath }
+        guard let section = form[sourceIndexPath.section] as? MultivaluedSection else { return sourceIndexPath }
         guard sourceIndexPath.section == proposedDestinationIndexPath.section else { return sourceIndexPath }
 
         let destRow = form[proposedDestinationIndexPath]
@@ -896,7 +896,7 @@ extension FormViewController : UITableViewDelegate {
 
     open func tableView(_ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath) {
 
-        guard var section = form[sourceIndexPath.section] as? BaseMultivaluedSection else { return }
+        guard var section = form[sourceIndexPath.section] as? MultivaluedSection else { return }
         if sourceIndexPath.row < section.count && destinationIndexPath.row < section.count && sourceIndexPath.row != destinationIndexPath.row {
 
             let sourceRow = form[sourceIndexPath]
@@ -910,7 +910,7 @@ extension FormViewController : UITableViewDelegate {
     }
 
     open func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath) -> UITableViewCell.EditingStyle {
-        guard let section = form[indexPath.section] as? BaseMultivaluedSection else {
+        guard let section = form[indexPath.section] as? MultivaluedSection else {
 			if form[indexPath].trailingSwipe.actions.count > 0 {
 				return .delete
 			}
@@ -1004,36 +1004,47 @@ extension FormViewController {
     // MARK: KeyBoard Notifications
 
     /**
-     Called when the keyboard will appear. Adjusts insets of the tableView and scrolls it if necessary.
+     Called when the keyboard did appear. Adjusts insets of the tableView and scrolls it if necessary.
      */
-    @objc open func keyboardWillShow(_ notification: Notification) {
+    @objc open func keyboardDidShow(_ notification: Notification) {
+        
         guard let table = tableView, let cell = table.findFirstResponder()?.formCell() else { return }
-        let keyBoardInfo = notification.userInfo!
-        let endFrame = keyBoardInfo[UIResponder.keyboardFrameEndUserInfoKey] as! NSValue
-
-        let keyBoardFrame = table.window!.convert(endFrame.cgRectValue, to: table.superview)
-        let newBottomInset = table.frame.origin.y + table.frame.size.height - keyBoardFrame.origin.y + rowKeyboardSpacing
-        var tableInsets = table.contentInset
-        var scrollIndicatorInsets = table.scrollIndicatorInsets
-        oldBottomInset = oldBottomInset ?? tableInsets.bottom
-        if newBottomInset > oldBottomInset! {
-            tableInsets.bottom = newBottomInset
-            scrollIndicatorInsets.bottom = tableInsets.bottom
-            UIView.beginAnimations(nil, context: nil)
-            UIView.setAnimationDuration((keyBoardInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as! Double))
-            UIView.setAnimationCurve(UIView.AnimationCurve(rawValue: (keyBoardInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as! Int))!)
-            table.contentInset = tableInsets
-            table.scrollIndicatorInsets = scrollIndicatorInsets
-            if let selectedRow = table.indexPath(for: cell) {
-                if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 11 {
-                    let rect = table.rectForRow(at: selectedRow)
-                    table.scrollRectToVisible(rect, animated: animateScroll)
-                } else {
-                    table.scrollToRow(at: selectedRow, at: .none, animated: animateScroll)
-                }
-            }
-            UIView.commitAnimations()
+        
+        if let selectedRow = table.indexPath(for: cell) {
+            DispatchQueue.main.asyncAfter(deadline: .now(), execute: {
+                table.layer.removeAllAnimations()
+                table.contentInset = .zero
+                table.scrollToRow(at: selectedRow, at: .top, animated: true)
+            })
         }
+        
+//        guard let table = tableView, let cell = table.findFirstResponder()?.formCell() else { return }
+//        let keyBoardInfo = notification.userInfo!
+//        let endFrame = keyBoardInfo[UIResponder.keyboardFrameEndUserInfoKey] as! NSValue
+//
+//        let keyBoardFrame = table.window!.convert(endFrame.cgRectValue, to: table.superview)
+//        let newBottomInset = table.frame.origin.y + table.frame.size.height - keyBoardFrame.origin.y + rowKeyboardSpacing
+//        var tableInsets = table.contentInset
+//        var scrollIndicatorInsets = table.scrollIndicatorInsets
+//        oldBottomInset = oldBottomInset ?? tableInsets.bottom
+//        if newBottomInset > oldBottomInset! {
+//            tableInsets.bottom = newBottomInset
+//            scrollIndicatorInsets.bottom = tableInsets.bottom
+//            UIView.beginAnimations(nil, context: nil)
+//            UIView.setAnimationDuration((keyBoardInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as! Double))
+//            UIView.setAnimationCurve(UIView.AnimationCurve(rawValue: (keyBoardInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as! Int))!)
+//            table.contentInset = tableInsets
+//            table.scrollIndicatorInsets = scrollIndicatorInsets
+//            if let selectedRow = table.indexPath(for: cell) {
+//                if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 11 {
+//                    let rect = table.rectForRow(at: selectedRow)
+//                    table.scrollRectToVisible(rect, animated: animateScroll)
+//                } else {
+//                    table.scrollToRow(at: selectedRow, at: .none, animated: animateScroll)
+//                }
+//            }
+//            UIView.commitAnimations()
+//        }
     }
 
     /**
